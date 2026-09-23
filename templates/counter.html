@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Staff Counter</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.1/socket.io.js"></script>
+</head>
+<body>
+    <div class="container" style="max-width: 800px;">
+        <header>
+            <h1>Staff Dashboard</h1>
+            <div style="margin-top: 1rem;">
+                <label for="counter-select" style="font-size: 1.2rem; margin-right: 1rem;">Select Counter:</label>
+                <select id="counter-select" style="padding: 0.5rem 1rem; border-radius: 8px; background: var(--glass-bg); color: white; border: 1px solid var(--glass-border); font-size: 1.2rem;">
+                    <option value="1">Counter 1</option>
+                    <option value="2">Counter 2</option>
+                    <option value="3">Counter 3</option>
+                </select>
+            </div>
+        </header>
+
+        <div class="glass-panel" style="text-align: center;">
+            <p style="font-size: 1.2rem; color: var(--text-muted);">Currently Serving</p>
+            <div class="token-display" id="current-serving">--</div>
+            
+            <div style="margin-top: 2rem; display: flex; gap: 1rem; justify-content: center;">
+                <button class="btn btn-large" onclick="callNextToken()" style="background: var(--primary);">CALL NEXT</button>
+                <button class="btn btn-large" onclick="markNoShow()" style="background: var(--warning); border: none;">NO-SHOW</button>
+            </div>
+        </div>
+
+        <div style="margin-top: 2rem;">
+            <p style="color: var(--text-muted);">Total Waiting: <span id="waiting-count">0</span></p>
+        </div>
+    </div>
+
+    <script>
+        const socket = io();
+        let myCounter = 1;
+
+        document.getElementById('counter-select').addEventListener('change', (e) => {
+            myCounter = parseInt(e.target.value);
+            socket.emit('test_connect');
+        });
+
+        socket.on('queue_update', (data) => {
+            document.getElementById('waiting-count').innerText = data.waiting.length;
+            
+            const serving = data.serving.find(t => t.counter_number === myCounter);
+            document.getElementById('current-serving').innerText = serving ? serving.token_number : '--';
+        });
+
+        async function callNextToken() {
+            try {
+                const response = await fetch('/api/call_next', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ counter_number: myCounter })
+                });
+                
+                const data = await response.json();
+                if (!data.success) {
+                    alert('No patients waiting in queue.');
+                }
+            } catch (err) {
+                console.error(err);
+                alert("Failed to call next token");
+            }
+        }
+
+        async function markNoShow() {
+            try {
+                const response = await fetch('/api/no_show', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ counter_number: myCounter })
+                });
+                const data = await response.json();
+                if (data.success) {
+                    alert('Token marked as No-Show. Proceed to Call Next.');
+                }
+            } catch (err) { console.error(err); }
+        }
+    </script>
+</body>
+</html>

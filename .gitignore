@@ -1,0 +1,12 @@
+venv/
+__pycache__/
+*.pyc
+*.pyo
+.env
+queue.db
+static/qr/token_qr.png
+.vscode/
+ip.txt
+test_start.py
+test_db.py
+get_ips.py

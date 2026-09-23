@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>My Token</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.1/socket.io.js"></script>
+</head>
+<body>
+    <div id="notification-area"></div>
+    <div class="container" style="max-width: 600px; text-align: center; align-items: center; justify-content: center; display: flex; min-height: 90vh;">
+        
+        <div class="glass-panel" style="width: 100%;">
+            <header>
+                <h1>Get Token</h1>
+                <p>Digital queue generation</p>
+            </header>
+
+            <div style="margin-bottom: 2rem;">
+                <label for="lang-select" style="color: var(--text-muted); font-size: 0.9rem;">Voice Language:</label>
+                <select id="lang-select" style="padding: 0.5rem; border-radius: 8px; background: rgba(255,255,255,0.1); color: white; border: 1px solid var(--glass-border); margin-left: 0.5rem; outline: none;">
+                    <option value="en" style="color: black;">English</option>
+                    <option value="hi" style="color: black;">Hindi / हिंदी</option>
+                    <option value="ta" style="color: black;">Tamil / தமிழ்</option>
+                </select>
+            </div>
+
+            <div id="generate-section">
+                <div style="display: flex; gap: 0.5rem; justify-content: center; margin-bottom: 2rem;">
+                    <button class="btn cat-btn active" id="cat-OPD" onclick="setCategory('OPD')" style="font-size: 0.8rem; padding: 0.5rem 1rem;">OPD</button>
+                    <button class="btn cat-btn" id="cat-Emergency" onclick="setCategory('Emergency')" style="font-size: 0.8rem; padding: 0.5rem 1rem; background: var(--glass-bg); border: 1px solid var(--glass-border);">EMER</button>
+                    <button class="btn cat-btn" id="cat-Lab" onclick="setCategory('Lab')" style="font-size: 0.8rem; padding: 0.5rem 1rem; background: var(--glass-bg); border: 1px solid var(--glass-border);">LAB</button>
+                </div>
+                <button class="btn btn-large" onclick="generateToken()">GENERATE</button>
+            </div>
+
+            <div id="token-section" style="display: none;">
+                <p style="font-size: 1.2rem; color: var(--text-muted);">Your Token Number</p>
+                <div class="token-display" id="my-token">--</div>
+                <div class="status-badge status-waiting" id="my-status">Waiting</div>
+                <p id="token-expiry-text" style="margin-top: 10px; color: var(--warning); font-size: 0.9rem; font-weight: 500; display: none;"></p>
+                
+                <div style="margin-top: 2rem; padding-top: 2rem; border-top: 1px solid var(--glass-border);">
+                    <p style="margin-bottom: 0.5rem; color: var(--text-muted);">People ahead of you:</p>
+                    <h2 id="people-ahead" style="font-size: 2.5rem; color: white;">0</h2>
+                    <div id="crowd-density" style="font-weight:bold; margin-top:8px; font-size:1rem;"></div>
+                    <p id="est-wait-time" style="margin-top: 1rem; color: var(--text-muted); font-size: 1.1rem;"></p>
+                    
+                    <!-- Smart Balancing Info -->
+                    <div id="smart-info" style="margin-top: 1.5rem; padding: 1rem; background: rgba(78, 84, 200, 0.1); border-radius: 12px; border: 1px dashed var(--secondary); display: none;">
+                        <p style="font-size: 0.9rem; color: var(--secondary);">✨ Smart Balancing: Recommended Counter</p>
+                        <div id="rec-counter" style="font-size: 1.5rem; font-weight: bold; color: white; margin-top: 0.5rem;">Counter --</div>
+                    </div>
+                </div>
+            </div>
+            
+            <p id="alert-msg" style="margin-top: 1.5rem; color: var(--warning); font-weight: bold; display: none;" class="blink">
+                ⚠️ IT'S ALMOST YOUR TURN! PLEASE PROCEED TO WAITING AREA ⚠️
+            </p>
+        </div>
+    </div>
+
+    <script>
+        const socket = io();
+        let myToken = null;
+        let selectedCategory = 'OPD';
+        let audioNotification = new Audio('https://actions.google.com/sounds/v1/alarms/beep_short.ogg');
+
+        function setCategory(cat) {
+            selectedCategory = cat;
+            document.querySelectorAll('.cat-btn').forEach(btn => {
+                btn.classList.remove('active');
+                btn.style.background = 'var(--glass-bg)';
+                btn.style.border = '1px solid var(--glass-border)';
+            });
+            const activeBtn = document.getElementById('cat-' + cat);
+            activeBtn.style.background = 'linear-gradient(135deg, var(--primary), var(--secondary))';
+            activeBtn.style.border = 'none';
+        }
+
+        async function generateToken() {
+            try {
+                const response = await fetch('/api/generate', { 
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ category: selectedCategory })
+                });
+                const data = await response.json();
+                myToken = data.token_number;
+                
+                document.getElementById('generate-section').style.display = 'none';
+                document.getElementById('token-section').style.display = 'block';
+                document.getElementById('my-token').innerText = myToken;
+                
+                if (data.expires_at) {
+                    const timeOnly = data.expires_at.split(' ')[1].substring(0, 5); // Extracts HH:MM
+                    const expiryEl = document.getElementById('token-expiry-text');
+                    expiryEl.innerText = `Token Valid until: ${timeOnly}`;
+                    expiryEl.style.display = 'block';
+                }
+
+                if (Notification.permission !== 'granted') {
+                    Notification.requestPermission();
+                }
+            } catch (err) {
+                console.error(err);
+                alert("Failed to generate token");
+            }
+        }
+
+        socket.on('queue_update', async (data) => {
+            if (!myToken) return;
+
+            const waiting = data.waiting;
+            const myIndex = waiting.findIndex(t => t.token_number === myToken);
+
+            if (myIndex !== -1) {
+                document.getElementById('people-ahead').innerText = myIndex;
+                const densityEl = document.getElementById('crowd-density');
+                if (myIndex < 5) {
+                    densityEl.innerText = '🟢 Low Crowd Level';
+                    densityEl.style.color = '#4cd137';
+                } else if (myIndex < 15) {
+                    densityEl.innerText = '🟡 Medium Crowd Level';
+                    densityEl.style.color = '#fbc531';
+                } else {
+                    densityEl.innerText = '🔴 High Crowd Level';
+                    densityEl.style.color = '#e84118';
+                }
+
+                if (myIndex === 0 || myIndex === 1) {
+                    showTurnIsNear();
+                }
+                // Fetch average service time and show estimated wait
+                try {
+                    const resp = await fetch('/api/counter_stats');
+                    const stats = await resp.json();
+                    
+                    // Show recommended counter
+                    document.getElementById('smart-info').style.display = 'block';
+                    document.getElementById('rec-counter').innerText = 'Counter ' + stats.recommended;
+
+                    const avg = stats.counters.find(c => c.counter_number === stats.recommended)?.avg_service_time || 120;
+                    const estSec = Math.round((myIndex) * avg);
+                    let min = Math.floor(estSec / 60);
+                    let sec = estSec % 60;
+                    let text = min > 0 ? `${min} min${min>1?'s':''} ${sec} sec` : `${sec} sec`;
+                    document.getElementById('est-wait-time').innerText = `Estimated wait: ${text}`;
+                } catch(e) {
+                    console.error(e);
+                    document.getElementById('est-wait-time').innerText = '';
+                }
+            } else {
+                document.getElementById('est-wait-time').innerText = '';
+                document.getElementById('smart-info').style.display = 'none';
+            }
+
+            const serving = data.serving;
+            const myServing = serving.find(t => t.token_number === myToken);
+            if (myServing) {
+                document.getElementById('my-status').innerText = 'Serving at Counter ' + myServing.counter_number;
+                document.getElementById('my-status').className = 'status-badge status-serving';
+                document.getElementById('people-ahead').innerText = '0';
+                document.getElementById('alert-msg').style.display = 'none';
+                document.getElementById('est-wait-time').innerText = '';
+                showTurnIsNow(myServing.counter_number);
+            }
+        });
+
+        function showTurnIsNear() {
+            document.getElementById('alert-msg').style.display = 'block';
+            // Vibrate pattern for "getting close"
+            if (navigator.vibrate) {
+                navigator.vibrate([100, 100, 100, 100, 100]);
+            }
+        }
+        
+        function showTurnIsNow(counter) {
+            try {
+                // Play notification sound
+                audioNotification.play().catch(e => console.log("Audio play blocked", e));
+                
+                // Voice Announcement for mobile
+                if ('speechSynthesis' in window) {
+                    const lang = document.getElementById('lang-select').value;
+                    let text = `Token number ${myToken} please proceed to Counter ${counter}`;
+                    let voiceLang = 'en-US';
+
+                    if (lang === 'hi') {
+                        text = `टोकन नंबर ${myToken}, कृपया काउंटर ${counter} पर जाएं`;
+                        voiceLang = 'hi-IN';
+                    } else if (lang === 'ta') {
+                        text = `டோக்கன் எண் ${myToken}, தயவுசெய்து கவுண்டர் ${counter} க்கு செல்லவும்`;
+                        voiceLang = 'ta-IN';
+                    }
+
+                    let msg = new SpeechSynthesisUtterance(text);
+                    msg.lang = voiceLang;
+                    msg.volume = 1;
+                    msg.rate = 0.85;
+                    window.speechSynthesis.speak(msg);
+                }
+
+                // Show Popup Notification
+                if (window.Notification && Notification.permission === 'granted') {
+                    new Notification("It's your turn!", { 
+                        body: "Please proceed to Counter " + counter,
+                        vibrate: [200, 100, 200]
+                    });
+                } else if (window.Notification && Notification.permission !== 'denied') {
+                    Notification.requestPermission();
+                }
+
+                // Aggressive vibration for "it's your turn"
+                if (navigator.vibrate) {
+                    navigator.vibrate([500, 200, 500, 200, 500, 200, 500]);
+                }
+            } catch(e) {
+                console.error("Alert error:", e);
+            }
+        }
+    </script>
+</body>
+</html>

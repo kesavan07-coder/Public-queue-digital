@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Queue Display</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.1/socket.io.js"></script>
+    <script src="https://code.responsivevoice.org/responsivevoice.js"></script>
+</head>
+<body>
+    <div class="container" style="max-width: 1600px;">
+        <header>
+            <h1 style="font-size: 3.5rem;">Now Serving</h1>
+        </header>
+
+        <div class="grid-2">
+            <!-- Currently Serving -->
+            <div>
+                <h2 style="margin-bottom: 1rem; color: var(--text-muted);">At Counters</h2>
+                <div class="counter-grid" id="serving-list">
+                    <!-- Populated by JS -->
+                </div>
+                
+                <!-- NEW: Dynamic Balancing Visualization -->
+                <div class="glass-panel" style="margin-top: 2rem;">
+                    <h2 style="margin-bottom: 1rem; font-size: 1.2rem; color: var(--secondary);">⚡ Smart Balancing: Counter Performance</h2>
+                    <div id="counter-stats-list" style="display: flex; flex-direction: column; gap: 0.8rem;">
+                        <!-- Populated by JS -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- Waiting Next -->
+            <div>
+                <h2 style="margin-bottom: 1rem; color: var(--text-muted);">Waiting In Queue</h2>
+                <div class="glass-panel">
+                    <div class="card-list" id="waiting-list">
+                        <!-- Populated by JS -->
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Hidden audio for bell -->
+    <audio id="bell-sound" src="https://actions.google.com/sounds/v1/alarms/dinner_bell_triangle.ogg"></audio>
+
+    <script>
+        const socket = io();
+        
+        socket.on('queue_update', (data) => {
+            updateServing(data.serving);
+            updateWaiting(data.waiting);
+            updateCounterStats();
+        });
+
+        async function updateCounterStats() {
+            try {
+                const response = await fetch('/api/counter_stats');
+                const data = await response.json();
+                const list = document.getElementById('counter-stats-list');
+                list.innerHTML = '';
+
+                data.counters.forEach(c => {
+                    const row = document.createElement('div');
+                    row.className = 'token-card';
+                    row.style.padding = '0.8rem';
+                    const isRecommended = c.counter_number === data.recommended;
+                    
+                    row.innerHTML = `
+                        <div style="display: flex; align-items: center; gap: 10px;">
+                            <span style="font-weight: bold;">Counter ${c.counter_number}</span>
+                            ${isRecommended ? '<span class="status-badge status-serving" style="font-size: 0.6rem;">FASTEST</span>' : ''}
+                        </div>
+                        <div style="text-align: right;">
+                            <div style="font-size: 0.8rem; color: var(--text-muted);">Avg. Service: ${Math.round(c.avg_service_time)}s</div>
+                            <div style="font-size: 0.7rem; color: var(--text-muted);">Total Served: ${c.total_served}</div>
+                        </div>
+                    `;
+                    if (isRecommended) row.classList.add('highlight');
+                    list.appendChild(row);
+                });
+            } catch(e) { console.error(e); }
+        }
+
+        socket.on('token_called', (token) => {
+            const bell = document.getElementById('bell-sound');
+            bell.play().catch(e => console.log(e));
+
+            // Vibrate the phone if supported
+            if (navigator.vibrate) {
+                navigator.vibrate([500, 200, 500]);
+            }
+
+            // Play alarm sound (repeat bell for alarm effect)
+            setTimeout(() => {
+                bell.play().catch(() => {});
+            }, 1200);
+
+            // Show popup notification if permission granted
+            if (window.Notification && Notification.permission === 'granted') {
+                const notification = new Notification('Your token is being called!', {
+                    body: `Token number ${token.token_number}, please proceed to counter ${token.counter_number}`,
+                    icon: '/static/qr/logo192.png'
+                });
+            } else if (window.Notification && Notification.permission !== 'denied') {
+                Notification.requestPermission().then(permission => {
+                    if (permission === 'granted') {
+                        new Notification('Your token is being called!', {
+                            body: `Token number ${token.token_number}, please proceed to counter ${token.counter_number}`,
+                            icon: '/static/qr/logo192.png'
+                        });
+                    }
+                });
+            }
+
+            setTimeout(() => {
+                if (window.responsiveVoice) {
+                    responsiveVoice.speak(`Token number ${token.token_number}, please proceed to counter ${token.counter_number}`, "UK English Female");
+                }
+            }, 1000);
+
+            const el = document.getElementById(`serving-${token.token_number}`);
+            if (el) {
+                el.classList.add('highlight');
+                setTimeout(() => el.classList.remove('highlight'), 3000);
+            }
+
+            // Show feedback prompt after alert
+            setTimeout(() => {
+                showFeedbackPrompt(token.token_number);
+            }, 3500);
+        });
+
+        // Feedback prompt function
+        function showFeedbackPrompt(tokenNumber) {
+            if (document.getElementById('feedback-modal')) return;
+            const modal = document.createElement('div');
+            modal.id = 'feedback-modal';
+            modal.style.position = 'fixed';
+            modal.style.top = '0';
+            modal.style.left = '0';
+            modal.style.width = '100vw';
+            modal.style.height = '100vh';
+            modal.style.background = 'rgba(0,0,0,0.5)';
+            modal.style.display = 'flex';
+            modal.style.alignItems = 'center';
+            modal.style.justifyContent = 'center';
+            modal.style.zIndex = '9999';
+            modal.innerHTML = `
+                <div style="background: #fff; padding: 2rem 2.5rem; border-radius: 18px; box-shadow: 0 8px 32px rgba(0,0,0,0.25); text-align: center; max-width: 90vw;">
+                    <h2 style='margin-bottom: 1rem;'>How was your experience?</h2>
+                    <p style='margin-bottom: 1.5rem;'>Please rate your queue experience for token <b>${tokenNumber}</b>:</p>
+                    <div style='margin-bottom: 1.5rem;'>
+                        <button onclick="window.submitFeedback('good')" style='font-size: 1.5rem; margin: 0 1rem;'>😊 Good</button>
+                        <button onclick="window.submitFeedback('average')" style='font-size: 1.5rem; margin: 0 1rem;'>😐 Average</button>
+                        <button onclick="window.submitFeedback('bad')" style='font-size: 1.5rem; margin: 0 1rem;'>😞 Bad</button>
+                    </div>
+                    <button onclick="document.getElementById('feedback-modal').remove()" style='margin-top: 1rem;'>Close</button>
+                </div>
+            `;
+            document.body.appendChild(modal);
+        }
+
+        window.submitFeedback = function(rating) {
+            // Send feedback to server (implement endpoint as needed)
+            fetch('/api/feedback', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ rating })
+            }).catch(() => {});
+            if (document.getElementById('feedback-modal')) {
+                document.getElementById('feedback-modal').remove();
+            }
+            alert('Thank you for your feedback!');
+        };
+
+        function updateServing(servingTokens) {
+            const list = document.getElementById('serving-list');
+            list.innerHTML = '';
+            
+            if (servingTokens.length === 0) {
+                list.innerHTML = `<p style="color: var(--text-muted);">No tokens currently being served.</p>`;
+                return;
+            }
+
+            servingTokens.forEach(token => {
+                const card = document.createElement('div');
+                card.className = 'glass-panel';
+                card.id = `serving-${token.token_number}`;
+                card.style.textAlign = 'center';
+                
+                card.innerHTML = `
+                    <h3 style="color: var(--text-muted); font-size: 1.2rem; margin-bottom: 0.5rem;">Counter ${token.counter_number}</h3>
+                    <div class="token-display" style="font-size: 3.5rem; margin: 0; color: #fff;">${token.token_number}</div>
+                `;
+                list.appendChild(card);
+            });
+        }
+
+        function updateWaiting(waitingTokens) {
+            const list = document.getElementById('waiting-list');
+            list.innerHTML = '';
+            
+            if (waitingTokens.length === 0) {
+                list.innerHTML = `<p style="color: var(--text-muted);">Queue is empty.</p>`;
+                return;
+            }
+
+            waitingTokens.slice(0, 8).forEach((token, index) => {
+                const card = document.createElement('div');
+                card.className = 'token-card';
+                card.innerHTML = `
+                    <div style="display: flex; flex-direction: column;">
+                        <h3>${token.token_number}</h3>
+                        <span style="font-size: 0.7rem; color: var(--secondary); margin-top: 2px;">${token.category.toUpperCase()}</span>
+                    </div>
+                    <span class="status-badge status-waiting">Queue Position: ${index + 1}</span>
+                `;
+                list.appendChild(card);
+            });
+        }
+    </script>
+</body>
+</html>

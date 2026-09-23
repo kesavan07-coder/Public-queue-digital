@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Admin Dashboard</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <style>
+        .grid-dashboard {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 1.5rem;
+            margin-top: 2rem;
+        }
+        .stat-card {
+            background: var(--glass-bg);
+            border: 1px solid var(--glass-border);
+            border-radius: 12px;
+            padding: 1.5rem;
+            box-shadow: var(--shadow);
+            backdrop-filter: blur(8px);
+        }
+        .stat-card h3 { color: var(--secondary); margin-bottom: 0.5rem; }
+    </style>
+</head>
+<body>
+    <div class="container" style="max-width: 1000px; padding-top: 4rem;">
+        <header style="text-align: center; margin-bottom: 3rem;">
+            <h1>Admin Analytics 📊</h1>
+            <p>Queue performance insights for today</p>
+        </header>
+
+        <div class="stat-card" style="text-align: center;">
+            <h2 style="font-size: 2rem;">Total Tokens Generated</h2>
+            <p style="font-size: 4rem; color: white; font-weight: 700;">{{ stats.total_today }}</p>
+        </div>
+
+        <div class="grid-dashboard">
+            <div class="stat-card">
+                <h3>Token Categories</h3>
+                <ul style="list-style: none; padding: 0; margin-top: 1rem; text-transform: uppercase;">
+                    {% for cat, count in stats.by_category.items() %}
+                    <li style="display: flex; justify-content: space-between; margin-bottom: 0.5rem; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 5px;">
+                        <span>{{ cat }}</span>
+                        <b style="color: white; font-size: 1.2rem;">{{ count }}</b>
+                    </li>
+                    {% else %}
+                    <li>No tokens generated yet.</li>
+                    {% endfor %}
+                </ul>
+            </div>
+            
+            <div class="stat-card">
+                <h3>Token Status</h3>
+                <ul style="list-style: none; padding: 0; margin-top: 1rem; text-transform: capitalize;">
+                    {% for status, count in stats.by_status.items() %}
+                    <li style="display: flex; justify-content: space-between; margin-bottom: 0.5rem; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 5px;">
+                        <span>{{ status.replace('_', ' ') }}</span>
+                        <b style="color: white; font-size: 1.2rem;">{{ count }}</b>
+                    </li>
+                    {% else %}
+                    <li>No tokens generated yet.</li>
+                    {% endfor %}
+                </ul>
+            </div>
+        </div>
+    </div>
+</body>
+</html>
